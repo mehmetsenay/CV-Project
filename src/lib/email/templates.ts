@@ -250,3 +250,53 @@ export async function sendTrialEndingSoonEmail(to: string, name: string, daysLef
     `.trim(),
   })
 }
+
+// ============================================================
+// CV GÖRÜNTÜLENDİ EMAİLİ
+// ============================================================
+export async function sendCVViewedEmail(to: string, name: string, locationStr: string, cvTitle: string) {
+  const r = getResend()
+  if (!r) return { error: 'Resend not configured' }
+  return r.emails.send({
+    from: FROM_EMAIL,
+    to: resolveRecipient(to),
+    subject: `👀 CV'niz Görüntülendi!`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#18181b;border-radius:16px;border:1px solid #27272a;max-width:560px;width:100%;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:28px 40px;text-align:center;">
+              <div style="font-size:22px;font-weight:900;color:#fff;">CV<span style="color:#c4b5fd;">AI</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px;">
+              <h1 style="color:#fff;font-size:22px;margin:0 0 16px;">Tebrikler ${name || ''}! 👀</h1>
+              <p style="color:#a1a1aa;font-size:15px;line-height:1.6;margin:0 0 24px;">
+                <strong>${cvTitle}</strong> adlı CV'niz az önce görüntülendi!
+              </p>
+              <div style="background:#292524;border-radius:12px;padding:20px;margin:0 0 24px;">
+                <p style="color:#e4e4e7;font-size:14px;margin:0;text-align:center;">
+                  Lokasyon Tahmini: <strong style="color:#fbbf24;">${locationStr}</strong>
+                </p>
+              </div>
+              <p style="color:#71717a;font-size:13px;text-align:center;margin:0;">
+                Başarılar dileriz!
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim(),
+  })
+}

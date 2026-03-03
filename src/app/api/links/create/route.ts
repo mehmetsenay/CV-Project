@@ -6,29 +6,9 @@ export async function POST(request: NextRequest) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
+
         if (!user) {
             return NextResponse.json({ error: 'Yetkisiz erişim' }, { status: 401 })
-        }
-
-        // Kullanıcının aboneliğini kontrol et
-        const { data: profile } = await supabase
-            .from('users')
-            .select('subscription_status, trial_end_date')
-            .eq('id', user.id)
-            .single()
-
-        const status = profile?.subscription_status
-        const isActive = status === 'active'
-        const isTrialing = status === 'trialing'
-        const trialValid = isTrialing && profile?.trial_end_date
-            ? new Date() < new Date(profile.trial_end_date)
-            : false
-
-        if (!isActive && !trialValid) {
-            return NextResponse.json(
-                { error: 'Paylaşılabilir link oluşturmak için aktif abonelik gerekli' },
-                { status: 403 }
-            )
         }
 
         const body = await request.json()
@@ -39,14 +19,14 @@ export async function POST(request: NextRequest) {
         }
 
         // CV'nin bu kullanıcıya ait olduğunu kontrol et
-        const { data: cv } = await supabase
+        const { data: cv, error: cvError } = await supabase
             .from('cv_data')
             .select('id')
             .eq('id', cvId)
             .eq('user_id', user.id)
             .single()
 
-        if (!cv) {
+        if (cvError || !cv) {
             return NextResponse.json({ error: 'CV bulunamadı' }, { status: 404 })
         }
 
@@ -55,8 +35,9 @@ export async function POST(request: NextRequest) {
             .from('shareable_links')
             .select('slug')
             .eq('cv_id', cvId)
+            .eq('user_id', user.id)
             .eq('is_active', true)
-            .single()
+            .maybeSingle()
 
         if (existingLink) {
             return NextResponse.json({ slug: existingLink.slug, existing: true })
@@ -69,11 +50,13 @@ export async function POST(request: NextRequest) {
             .insert({
                 user_id: user.id,
                 cv_id: cvId,
-                slug,
+                slug: slug,
                 is_active: true,
+                view_count: 0
             })
 
         if (insertError) {
+            console.error('Link oluşturulamadı hatas:', insertError)
             return NextResponse.json({ error: 'Link oluşturulamadı' }, { status: 500 })
         }
 

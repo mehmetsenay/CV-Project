@@ -60,7 +60,7 @@ export async function scrapeLinkedInJob(jobUrl: string) {
     console.log('[Apify] İş ilanı scraping başladı:', jobUrl)
 
     const run = await client.actor('curious_coder/linkedin-jobs-scraper').call({
-        startUrls: [{ url: jobUrl }],
+        urls: [jobUrl],
         maxItems: 1,
         proxy: {
             useApifyProxy: true,
@@ -93,7 +93,7 @@ export async function startLinkedInProfileScrape(profileUrl: string) {
 
 export async function startLinkedInJobScrape(jobUrl: string) {
     return await client.actor('curious_coder/linkedin-jobs-scraper').start({
-        startUrls: [{ url: jobUrl }],
+        urls: [jobUrl],
         maxItems: 1,
         proxy: {
             useApifyProxy: true,

@@ -54,10 +54,23 @@ export default function DashboardNavbar({ user, profile }: DashboardNavbarProps)
                     <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600">
                         <Sparkles className="h-3.5 w-3.5 text-white" />
                     </div>
-                    <span className="font-bold text-white">
+                    <span className="font-bold text-white hidden sm:inline-block">
                         CV<span className="text-violet-400">AI</span>
                     </span>
                 </Link>
+
+                {/* Orta - Linkler */}
+                <div className="flex items-center gap-6">
+                    <Link href="/dashboard" className="text-sm font-medium text-zinc-300 hover:text-white transition-colors">
+                        CV'lerim
+                    </Link>
+                    <Link href="/dashboard/cv/new" className="text-sm font-medium text-zinc-300 hover:text-white transition-colors">
+                        Yeni CV
+                    </Link>
+                    <Link href="/dashboard/jobs" className="text-sm font-medium text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3" /> İş Bul
+                    </Link>
+                </div>
 
                 {/* Sağ taraf */}
                 <div className="flex items-center gap-3">

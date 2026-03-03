@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
+import AnimatedBackground from '@/components/ui/animated-background'
 import './globals.css'
 
 const inter = Inter({
@@ -24,8 +25,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="tr" className="dark">
-      <body className={`${inter.variable} font-sans antialiased bg-black text-white`}>
-        {children}
+      <body className={`${inter.variable} font-sans antialiased bg-black text-white selection:bg-violet-500/30`}>
+        <AnimatedBackground />
+        <div className="relative z-10 w-full min-h-screen">
+          {children}
+        </div>
         <Toaster richColors position="top-right" />
       </body>
     </html>

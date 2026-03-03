@@ -1,95 +1,140 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY!)
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
 export async function generateCVWithClaude(
-    linkedinData: Record<string, unknown>,
-    jobData: Record<string, unknown>
+  linkedinData: Record<string, unknown>,
+  jobData: Record<string, unknown>
 ): Promise<string> {
-    const systemPrompt = `Sen kıdemli bir ATS CV uzmanısın. 10 yılı aşkın işe alım danışmanlığı deneyimine sahipsin.
+  // Debug: Gelen veriyi logla
+  console.log('📊 LinkedIn data keys:', Object.keys(linkedinData || {}).slice(0, 15))
+  console.log('📊 Job data keys:', Object.keys(jobData || {}).slice(0, 15))
+
+  const prompt = `Sen kıdemli bir ATS CV uzmanısın.
+
+--- LİNKEDIN PROFİL VERİSİ (Ham JSON) ---
+${JSON.stringify(linkedinData, null, 2)}
+
+--- İŞ İLANI VERİSİ (Ham JSON) ---
+${JSON.stringify(jobData, null, 2)}
+
+--- GÖREV ---
+Bu verileri analiz edip ATS-optimized bir CV JSON'ı üret.
+
+--- KİŞİSEL BİLGİ ÇIKARMA (harvestapi formatı) ---
+LinkedIn verisi harvestapi formatında gelir. Şu sırayla dene:
+
+İSİM: "fullName" → yoksa "firstName" + " " + "lastName" → yoksa "name"
+EMAİL: "email" → yoksa null (uydurma)
+TELEFON: "phone" → yoksa null
+KONUM: "location.linkedinText" → yoksa "location" (string ise direkt kullan)
+HEADLINE: "headline" → yoksa "jobTitle"
+LİNKEDİN URL: "linkedinUrl" → yoksa "publicIdentifier" ile https://linkedin.com/in/[id] oluştur
+ÖZET: "about" → yoksa "summary" → yoksa "description"
+FOTOĞRAF: "profilePicUrl" → yoksa "profileImageUrl" → yoksa null
+DENEYIM: "experience" → yoksa "positions" → yoksa her öğede title/company/startDate/endDate/description
+EĞİTİM: "education" → yoksa "schools"
+BECERİLER: "topSkills" (array of strings veya {name} objeleri) → yoksa "skills"
+
+--- ÇIKTI KURALLARI ---
+1. SADECE geçerli JSON döndür. Markdown yok, code block yok.
+2. Uydurma bilgi ekleme (email, telefon özellikle).
+3. İş ilanındaki anahtar kelimeleri CV'ye yerleştir.
+4. ATS skoru hesapla (0-100).
+5. matched_keywords listesini iş ilanındaki terimlerden doldur.
+6. ÖNEMLİ: "projects" ve "certifications" alanlarını eğer adayın profilinde veya deneyim açıklamalarında (experience bullets) zikredilmişse KESİNLİKLE doldur. Boş bırakmaktan kaçın. Adayın projelerini bul ve listele.
+
+JSON FORMATI:
+{
+  "personal": {
+    "name": "Gerçek ad soyad (LinkedIn'den)",
+    "email": "email veya null",
+    "phone": null,
+    "location": "konum",
+    "linkedin": "linkedin profil url",
+    "portfolio": null,
+    "profileImage": "profil fotoğrafı URL'si veya null"
+  },
+  "summary": "2-3 cümle pozisyona özel özet",
+  "experience": [
+    {
+      "company": "şirket adı",
+      "title": "pozisyon",
+      "startDate": "Oca 2022",
+      "endDate": "Hâlâ",
+      "location": "konum",
+      "bullets": ["başarı 1", "başarı 2"]
+    }
+  ],
+  "education": [
+    {
+      "school": "okul adı",
+      "degree": "lisans/yüksek lisans + bölüm",
+      "year": "mezuniyet yılı"
+    }
+  ],
+  "skills": {
+    "technical": ["beceri1", "beceri2"],
+    "soft": ["beceri1"],
+    "languages": ["Türkçe (Anadil)"]
+  },
+  "certifications": [
+    {
+      "name": "Sertifika veya Eğitim Adı",
+      "issuer": "Veren Kurum",
+      "date": "Tarih (örn: 2023)"
+    }
+  ],
+  "projects": [
+    {
+      "name": "Proje Adı",
+      "description": "Proje hakkında 1-2 cümlelik açıklama. Adayın deneyimlerinden veya projelerinden çıkar.",
+      "technologies": ["React", "Typescript"]
+    }
+  ],
+  "ats_score": 85,
+  "matched_keywords": ["keyword1", "keyword2"]
+}`
+
+  const result = await model.generateContent(prompt)
+  const text = result.response.text()
+  console.log('🤖 Gemini response preview:', text.slice(0, 200))
+  return text
+}
+
+export async function generateMotivationLetterWithClaude(
+  linkedinData: Record<string, unknown>,
+  jobData: Record<string, unknown>,
+  cvJson: Record<string, unknown>
+): Promise<string> {
+  const prompt = `Sen profesyonel bir İnsan Kaynakları Uzmanı ve deneyimli bir Kariyer Danışmanısın.
 
 GÖREV:
-Kullanıcının LinkedIn profil verisi (JSON) ve hedef iş ilanı verisi (JSON) sana verildi.
-Bu ikisini derinlemesine analiz ederek, ATS sistemlerini geçecek ve recruiter'ların dikkatini çekecek, TAMAMEN bu pozisyona özel bir CV oluştur.
+Kullanıcının LinkedIn profil verisi (JSON), hedef iş ilanı verisi (JSON) ve yeni oluşturulmuş CV'si (JSON) sana sağlandı.
+Bu verileri kullanarak hedef iş ilanına tam olarak uyan, İkna Edici ve Profesyonel bir Motivasyon Mektubu (Ön Yazı) oluştur.
 
 KURALLAR:
-1. İş ilanındaki anahtar kelimeleri CV'ye organik biçimde yerleştir
-2. Her deneyim maddesi bir RAKAMLA başlasın: "%40 daha hızlı...", "5 kişilik ekip..."
-3. Geçmiş işler için geçmiş zaman, mevcut iş için geniş zaman kullan
-4. Beceriler bölümünü iş ilanındaki teknolojilerle önceliklendir
-5. Toplam kelime sayısı 400-600 arasında olsun (1 sayfa kuralı)
-6. ATS skoru hesapla (0-100) ve matched_keywords listesini doldur
-7. Hiçbir uydurma bilgi ekleme — sadece LinkedIn'deki gerçek verileri kullan
-8. Eğer LinkedIn verisi eksik alanlar içeriyorsa o alanları boş bırak, uydurmaaçıklama yazma
+1. Hitap ile başla (Eğer ilanda isim varsa kullanarak, yoksa "Sayın İlgili" veya "İnsan Kaynakları Yöneticisi" gibi profesyonel bir hitap kullan).
+2. Giriş: Neden bu şirkete ve pozisyona başvurduğunu güçlü bir şekilde ifade et.
+3. Gelişme: Adayın geçmiş tecrübelerinden RAKAMSAL başarılarını kullan.
+4. Sonuç: Teşekkür ederek mülakat talebinde bulun.
+5. Yazım Dili: Profesyonel, akıcı Türkçe. Yaklaşık 250-350 kelime.
+6. Asla boş placeholder bırakma.
+7. Çıktı olarak SADECE mektubun tam metnini döndür.
 
-ÇIKTI: Yalnızca aşağıdaki JSON formatında yanıt ver. Başka hiçbir şey yazma. Markdown code block kullanma. Sadece ham JSON.`
-
-    const userMessage = `LinkedIn Profil Verisi:
+LinkedIn Profil Verisi:
 ${JSON.stringify(linkedinData, null, 2)}
 
 İş İlanı Verisi:
 ${JSON.stringify(jobData, null, 2)}
 
-Lütfen bu iki veriyi analiz ederek ATS-optimized CV JSON'ı üret. Format:
-{
-  "personal": {
-    "name": "Ad Soyad",
-    "email": "email@domain.com",
-    "phone": "+90 5xx xxx xxxx",
-    "location": "Şehir, Ülke",
-    "linkedin": "linkedin.com/in/username",
-    "portfolio": "portfolio.com"
-  },
-  "summary": "2-3 cümlelik güçlü, pozisyona özel özet...",
-  "experience": [
-    {
-      "company": "Şirket Adı",
-      "title": "Pozisyon",
-      "startDate": "Oca 2022",
-      "endDate": "Hâlâ",
-      "location": "İstanbul",
-      "bullets": [
-        "%40 daha hızlı teslimat sağlayan CI/CD pipeline kurdu",
-        "5 kişilik frontend ekibine teknik liderlik yaptı"
-      ]
-    }
-  ],
-  "education": [
-    {
-      "school": "Üniversite Adı",
-      "degree": "Lisans, Bilgisayar Mühendisliği",
-      "year": "2020"
-    }
-  ],
-  "skills": {
-    "technical": ["React", "TypeScript", "PostgreSQL"],
-    "soft": ["Proje Yönetimi", "Ekip Liderliği"],
-    "languages": ["Türkçe (Anadil)", "İngilizce (C1)"]
-  },
-  "certifications": [],
-  "projects": [],
-  "ats_score": 87,
-  "matched_keywords": ["Next.js", "PostgreSQL", "API Design"]
-}`
+Adayın CV Verisi:
+${JSON.stringify(cvJson, null, 2)}
 
-    const message = await client.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 4096,
-        messages: [
-            {
-                role: 'user',
-                content: userMessage,
-            },
-        ],
-        system: systemPrompt,
-    })
+Lütfen bu verileri kullanarak muhteşem bir motivasyon mektubu (ön yazı) metni üret.`
 
-    const content = message.content[0]
-    if (content.type !== 'text') {
-        throw new Error('Claude beklenmeyen format döndürdü')
-    }
-
-    return content.text
+  const result = await model.generateContent(prompt)
+  const text = result.response.text()
+  return text.trim()
 }

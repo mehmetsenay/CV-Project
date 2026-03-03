@@ -50,18 +50,21 @@ export async function POST(request: NextRequest) {
             cv.target_job_json as Record<string, unknown>
         )
 
-        // JSON parse
+        // JSON parse — Gemini bazen ```json veya ``` block döndürebilir, temizle
         let cvJson: CVData
         try {
-            // Bazen Claude ```json block döndürebilir, temizle
-            const cleaned = rawJson
-                .replace(/^```json\s*/i, '')
-                .replace(/^```\s*/i, '')
-                .replace(/\s*```$/i, '')
-                .trim()
+            let cleaned = rawJson.trim()
+            cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+            // JSON öncesinde açıklama metni varsa, { ile başlayan yeri bul
+            const firstBrace = cleaned.indexOf('{')
+            const lastBrace = cleaned.lastIndexOf('}')
+            if (firstBrace > 0 && lastBrace > firstBrace) {
+                cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+            }
             cvJson = JSON.parse(cleaned)
+            console.log('✅ CV JSON parsed. personal.name:', (cvJson as any)?.personal?.name)
         } catch {
-            console.error('JSON parse hatası, ham yanıt:', rawJson)
+            console.error('JSON parse hatası, ham yanıt (ilk 500 char):', rawJson.slice(0, 500))
             await supabase
                 .from('cv_data')
                 .update({
@@ -114,9 +117,10 @@ export async function POST(request: NextRequest) {
             matchedKeywords: cvJson.matched_keywords,
         })
     } catch (error) {
-        console.error('CV üretim hatası:', error)
+        const errMsg = error instanceof Error ? error.message : String(error)
+        console.error('CV üretim hatası:', errMsg)
         return NextResponse.json(
-            { error: 'CV üretimi sırasında bir hata oluştu' },
+            { error: 'CV üretimi sırasında bir hata oluştu', detail: errMsg },
             { status: 500 }
         )
     }

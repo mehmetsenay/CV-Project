@@ -86,16 +86,38 @@ export async function GET(
                     const { items: otherItems } = await apify.dataset(otherRun.defaultDatasetId).listItems()
                     const otherData = otherItems?.[0] ?? null
 
+                    // Mevcut CV'deki kullanıcı sağlanan bilgileri al
+                    const { data: existingCv } = await supabase
+                        .from('cv_data')
+                        .select('base_linkedin_json')
+                        .eq('id', cvId)
+                        .single()
+
+                    const userProvided = (existingCv?.base_linkedin_json as any)?._userProvided
+                        ? existingCv?.base_linkedin_json as any
+                        : null
+
+                    const mergeWithUser = (scraped: any) => {
+                        if (!userProvided) return scraped
+                        return {
+                            ...(scraped || {}),
+                            fullName: userProvided.fullName || scraped?.fullName || scraped?.name,
+                            email: userProvided.email || scraped?.email,
+                            linkedinUrl: userProvided.linkedinUrl || scraped?.linkedinUrl,
+                            _userProvided: true,
+                        }
+                    }
+
                     const updatePayload =
                         type === 'profile'
                             ? {
-                                base_linkedin_json: data,
+                                base_linkedin_json: mergeWithUser(data),
                                 target_job_json: otherData,
                                 status: 'generating',
                             }
                             : {
                                 target_job_json: data,
-                                base_linkedin_json: otherData,
+                                base_linkedin_json: mergeWithUser(otherData),
                                 status: 'generating',
                             }
 

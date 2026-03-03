@@ -6,6 +6,7 @@ export interface CVPersonal {
     location?: string
     linkedin?: string
     portfolio?: string
+    profileImage?: string
 }
 
 export interface CVExperience {

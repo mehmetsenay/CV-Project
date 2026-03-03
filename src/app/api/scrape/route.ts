@@ -18,7 +18,18 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json()
-        const { linkedinUrl, jobUrl, cvId, title } = body
+        const { linkedinUrl, cvId, title, fullName, email } = body
+        let jobUrl = body.jobUrl;
+
+        // Eğer jobUrl bir arama URL'si ise ve içinde currentJobId varsa, onu temiz bir /view/ URL'sine çevir
+        // Böylece Apify yüzlerce ilan yerine yalnızca 1 iş ilanını hemen çeker.
+        try {
+            const parsedJobUrl = new URL(jobUrl);
+            if (parsedJobUrl.searchParams.has('currentJobId')) {
+                const jobId = parsedJobUrl.searchParams.get('currentJobId');
+                jobUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
+            }
+        } catch (e) { /* Hatalıysa aşağıda validateLinkedInJobUrl var */ }
 
         // URL validasyonu
         if (!linkedinUrl || !validateLinkedInProfileUrl(linkedinUrl)) {
@@ -46,6 +57,13 @@ export async function POST(request: NextRequest) {
                     linkedin_url: linkedinUrl,
                     job_url: jobUrl,
                     status: 'scraping',
+                    // Kullanıcının girdigi temel bilgileri hemen kaydet
+                    base_linkedin_json: fullName ? {
+                        fullName: fullName || null,
+                        email: email || null,
+                        linkedinUrl: linkedinUrl,
+                        _userProvided: true,
+                    } : null,
                 })
                 .select()
                 .single()
@@ -57,23 +75,58 @@ export async function POST(request: NextRequest) {
         } else {
             await supabase
                 .from('cv_data')
-                .update({ status: 'scraping', linkedin_url: linkedinUrl, job_url: jobUrl })
+                .update({
+                    status: 'scraping',
+                    linkedin_url: linkedinUrl,
+                    job_url: jobUrl,
+                    ...(fullName ? {
+                        base_linkedin_json: {
+                            fullName: fullName || null,
+                            email: email || null,
+                            linkedinUrl: linkedinUrl,
+                            _userProvided: true,
+                        }
+                    } : {}),
+                })
                 .eq('id', currentCvId)
                 .eq('user_id', user.id)
         }
 
         // İki Apify actor'ı paralel olarak başlat
-        const [profileRun, jobRun] = await Promise.all([
-            apify.actor('dev_fusion/linkedin-profile-scraper').start({
-                profileUrls: [linkedinUrl],
-                proxy: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
-            }),
-            apify.actor('curious_coder/linkedin-jobs-scraper').start({
-                startUrls: [{ url: jobUrl }],
-                maxItems: 1,
-                proxy: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
-            }),
-        ])
+        let profileRun, jobRun;
+        try {
+            [profileRun, jobRun] = await Promise.all([
+                apify.actor('harvestapi/linkedin-profile-scraper').start({
+                    urls: [linkedinUrl],
+                    proxy: { useApifyProxy: true },
+                }),
+                apify.actor('apify/puppeteer-scraper').start({
+                    startUrls: [{ url: jobUrl }],
+                    pageFunction: `async ({ page, request, log }) => {
+                        log.info('Processing ' + request.url);
+                        await page.waitForSelector('.top-card-layout__title', { timeout: 10000 }).catch(() => {});
+                        const title = await page.$eval('.top-card-layout__title', el => el.innerText).catch(() => 'Bilinmeyen Pozisyon');
+                        const companyName = await page.$eval('.topcard__org-name-link', el => el.innerText).catch(() => 'Bilinmeyen Şirket');
+                        const location = await page.$eval('.topcard__flavor--bullet', el => el.innerText).catch(() => 'Bilinmeyen Konum');
+                        const descriptionText = await page.$eval('.show-more-less-html__markup', el => el.innerText).catch(() => '');
+                        return { title, companyName, location, descriptionText };
+                    }`,
+                    proxyConfiguration: { useApifyProxy: true },
+                }),
+            ])
+        } catch (startError: any) {
+            console.error('Apify start error:', startError?.message || startError);
+            console.error('Apify start error stack:', startError?.stack);
+
+            // Hata durumunda CV statusünü error'a çek
+            await supabase
+                .from('cv_data')
+                .update({ status: 'error', error_message: `Apify Hatası: ${startError.message || 'Bilinmeyen hata'}` })
+                .eq('id', currentCvId)
+                .eq('user_id', user.id)
+
+            throw startError;
+        }
 
         return NextResponse.json({
             success: true,
@@ -83,8 +136,9 @@ export async function POST(request: NextRequest) {
             jobRunId: jobRun.id,
             jobDatasetId: jobRun.defaultDatasetId,
         })
-    } catch (error) {
-        console.error('Scraping başlatma hatası:', error)
+    } catch (error: any) {
+        console.error('Scraping başlatma hatası:', error?.message || error)
+        console.error('Stack:', error?.stack)
         return NextResponse.json(
             { error: 'Scraping başlatılamadı. Lütfen tekrar dene.' },
             { status: 500 }
