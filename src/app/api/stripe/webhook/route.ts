@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 // Admin ayrıcalıklı istemci - veritabanını limitsiz güncelleyebilmek için
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+// Build işlemi sırasında çökmeyi önlemek için anahtarlar yoksa sahte değerle başlatıyoruz (Zaten Webhook kapalı)
+const supabaseAdmin = supabaseUrl && supabaseServiceKey
+    ? createClient(supabaseUrl, supabaseServiceKey)
+    : null as any
 
 export async function POST(req: NextRequest) {
+    if (!supabaseAdmin) {
+        return NextResponse.json({ error: 'Supabase Service Key eksik' }, { status: 500 })
+    }
     const body = await req.text()
     const sig = req.headers.get('stripe-signature')
 
